@@ -2,7 +2,8 @@
 rolls a selected number of specified dice
 
 to install this script run the following
-	- $ go run build -o roll
+  - $ go run build -o roll
+
 and place the executable
 wherever you keep your shell scripts
 (usr/local/bin)
@@ -11,150 +12,145 @@ wherever you keep your shell scripts
 package main
 
 import (
+	"flag"
 	"fmt"
 	"math/rand/v2"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 )
 
-var (
-	loose bool
-)
+type RollConfig struct {
+	NumDice  int
+	DieType  int
+	Modifier int
+	Minimum  int
+	Maximum  int
+}
 
 func main() {
+	help := flag.Bool("h", false, "View command usage")
+	flag.Parse()
 
-	for i := range len(os.Args) {
-		if strings.Contains(os.Args[i], "-l") || strings.Contains(os.Args[i], "--loose") {
-			loose = true
-		} else {
-			loose = false
-		}
-
-		if strings.Contains(os.Args[i], "-h") || strings.Contains(os.Args[i], "--help") {
-			PrintHelp()
-			return
-		}
-	}
-
-	switch len(os.Args) {
-	case 1:
-		Roll(1, 6)
-		return
-
-	default:
-		arg := os.Args[1]
-
-		// If arg starts with d (ex: d20)
-		if strings.Index(arg, "d") == 0 {
-			args := strings.Split(arg, "d")
-			diceToRoll := GetDice(args[1])
-			if diceToRoll == 0 {
-				return
-			}
-
-			Roll(1, diceToRoll)
-			return
-		} else {
-			// Else we have a string in front of d*
-			args := strings.Split(arg, "d")
-
-			if strings.ContainsAny(args[0], "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvqxyz") {
-				fmt.Println("err: cannot use char as int")
-				fmt.Println("usage: roll 3d20 (rolls #dice)")
-				return
-			} else {
-
-				if len(args) == 1 && strings.Contains(args[0], "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvqxyz") != true {
-					qty, _ := strconv.ParseInt(args[0], 0, 0)
-					Roll(int(qty), 6)
-					return
-				}
-
-				qty, _ := strconv.ParseInt(args[0], 0, 0)
-				diceToRoll := GetDice(args[1])
-				if diceToRoll == 0 {
-					return
-				}
-				Roll(int(qty), diceToRoll)
-			}
-		}
-		return
-	}
-}
-
-// ----------------------------------------------
-// helper functions
-// ----------------------------------------------
-
-func GetDice(d string) int {
-	switch d {
-	case "4":
-		return 4
-	case "6":
-		return 6
-	case "8":
-		return 8
-	case "10":
-		return 10
-	case "12":
-		return 12
-	case "20":
-		return 20
-	default:
-		if loose == true {
-			i, _ := strconv.ParseInt(d, 0, 0)
-			return int(i)
-		} else {
-			fmt.Printf("d%s doesn't exist! use --loose (-l) to use any value of die\n", d)
-			return 0
-		}
-	}
-}
-
-func PrintHelp() {
-	fmt.Println("usage: roll #diceToRoll")
-
-	fmt.Println("\nflags:")
-	fmt.Println("  --loose -l: enable loose mode (any number of sided die)")
-	fmt.Println("  --help -h: help / info")
-
-	fmt.Println("\nexamples:")
-	fmt.Println("  --  roll (rolls a d6)")
-	fmt.Println("  --  roll 2d8 (rolls 2 d8)")
-	fmt.Println("  --  roll 10d10 (rolls 10 d10)")
-	fmt.Println("  --  roll 2d5 -l (rolls 2 d5 in loose mode)")
-	fmt.Println("  --  roll 7 (rolls 7 d6)")
-}
-
-func Roll(qty int, dice int) {
-	if qty < 1 {
-		fmt.Println("err: cannot roll less than 1 die")
-		return
-	}
-	if dice < 1 {
-		fmt.Println("err: cannot roll a d%a", dice)
+	if *help == true {
+		printUsage()
 		return
 	}
 
-	switch qty {
+	var input string
+	if len(os.Args) > 1 {
+		input = strings.Join(os.Args[1:], " ")
+	}
+
+	config := parseRollString(input)
+
+	switch config.NumDice {
+	case 0:
+		fmt.Println("error: cannot roll 0 dice")
+		os.Exit(1)
 	case 1:
 		result := 0
-		r := rand.IntN(dice) + 1
+		r := rand.IntN(config.DieType) + 1
+
+		if r < config.Minimum {
+			r = config.Minimum
+		}
+		if config.Maximum != -1 && r > config.Maximum {
+			r = config.Maximum
+		}
+
 		result += r
-		fmt.Printf("roll: %v\n", r)
+		fmt.Printf("rolling a d%v\n", config.DieType)
 
+		if config.Modifier != 0 {
+			switch config.Modifier > 0 {
+			case true:
+				fmt.Printf("result: %v + %v\n", result, config.Modifier)
+			case false:
+				fmt.Printf("result: %v - %v\n", result, config.Modifier)
+			}
+		}
+
+		result += config.Modifier
+		fmt.Printf("result: %v\n", result)
+		return
 	default:
-		fmt.Printf("rolling %d d%d\n", qty, dice)
 		result := 0
-		for i := range qty {
-			r := rand.IntN(dice) + 1
+		for i := range config.NumDice {
+			r := rand.IntN(config.DieType) + 1
+
+			if r < config.Minimum {
+				r = config.Minimum
+			}
+			if config.Maximum != -1 && r > config.Maximum {
+				r = config.Maximum
+			}
 			result += r
 			fmt.Printf("roll %v: %v\n", i+1, r)
 		}
-		fmt.Println("---")
-		fmt.Printf("total roll: %v\n", result)
+		if config.Modifier != 0 {
+			switch config.Modifier > 0 {
+			case true:
+				fmt.Printf("result: %v + %v\n", result, config.Modifier)
+			case false:
+				fmt.Printf("result: %v - %v\n", result, config.Modifier)
+			}
+		}
 
+		result += config.Modifier
+		fmt.Printf("total: %v\n", result)
 	}
 
+	if len(os.Args) == 1 {
+		printUsage()
+	}
+}
+
+func printUsage() {
+	fmt.Println("\nUsage: roll <roll specification>")
+	fmt.Println("Examples:")
+	fmt.Println("  roll")
+	fmt.Println("  roll 2d6")
+	fmt.Println("  roll +4")
+	fmt.Println("  roll min3")
+	fmt.Println("  roll 2d20+12 max16")
+}
+
+func parseRollString(input string) RollConfig {
+	config := RollConfig{NumDice: 1, DieType: 6, Modifier: 0, Minimum: 1, Maximum: -1}
+
+	if input == "" {
+		return config
+	}
+
+	// Parse the main roll part
+	rollRegex := regexp.MustCompile(`(\d+)?d?(\d+)?([+-]\d+)?`)
+	matches := rollRegex.FindStringSubmatch(input)
+
+	if len(matches) > 1 && matches[1] != "" {
+		config.NumDice, _ = strconv.Atoi(matches[1])
+	}
+	if len(matches) > 2 && matches[2] != "" {
+		config.DieType, _ = strconv.Atoi(matches[2])
+	}
+	if len(matches) > 3 && matches[3] != "" {
+		config.Modifier, _ = strconv.Atoi(matches[3])
+	}
+
+	// Parse the minimum if present
+	minRegex := regexp.MustCompile(`min(\d+)`)
+	minMatch := minRegex.FindStringSubmatch(input)
+	if len(minMatch) > 1 {
+		config.Minimum, _ = strconv.Atoi(minMatch[1])
+	}
+
+	// Parse the maximum if present
+	maxRegex := regexp.MustCompile(`max(\d+)`)
+	maxMatch := maxRegex.FindStringSubmatch(input)
+	if len(maxMatch) > 1 {
+		config.Maximum, _ = strconv.Atoi(maxMatch[1])
+	}
+
+	return config
 }
